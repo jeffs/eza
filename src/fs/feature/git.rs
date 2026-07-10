@@ -344,18 +344,17 @@ impl Git {
 fn reorient(path: &Path) -> PathBuf {
     use std::env::current_dir;
 
-    // TODO: I’m not 100% on this func tbh
     let path = match current_dir() {
         Err(_) => Path::new(".").join(path),
         Ok(dir) => dir.join(path),
     };
 
-    path.canonicalize().unwrap_or(path)
+    normalize(&path)
 }
 
 #[cfg(windows)]
 fn reorient(path: &Path) -> PathBuf {
-    let unc_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let unc_path = normalize(path);
     // On Windows UNC path is returned. We need to strip the prefix for it to work.
     let normal_path = unc_path
         .as_os_str()
@@ -363,6 +362,20 @@ fn reorient(path: &Path) -> PathBuf {
         .unwrap()
         .trim_start_matches("\\\\?\\");
     PathBuf::from(normal_path)
+}
+
+/// Canonicalizes the path’s parent and re-appends the final component, so
+/// that `..` segments and symlinked ancestor directories resolve while a
+/// symlink at the leaf is *not* followed: Git assigns a symlink’s status to
+/// the link itself, never to its target.
+fn normalize(path: &Path) -> PathBuf {
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => parent
+            .canonicalize()
+            .map(|parent| parent.join(name))
+            .unwrap_or_else(|_| path.to_path_buf()),
+        _ => path.canonicalize().unwrap_or_else(|_| path.to_path_buf()),
+    }
 }
 
 /// The character to display if the file has been modified, but not staged.
